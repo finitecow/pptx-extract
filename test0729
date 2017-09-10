@@ -1,0 +1,130 @@
+from pptx import Presentation
+from PIL import Image
+import io
+
+'''
+the main purpose of this script is:
+extract the data using python-pptx and save the data into a PIL Image object for later use
+'''
+
+prs = Presentation("Daily OOC report 1214.pptm")
+'''
+todo:
+add check if read only
+'''
+for slide in prs.slides:
+    for shape in slide.shapes:
+        shape_name_and_number = shape.name.split()
+        print( shape_name_and_number )
+        if shape_name_and_number[0] == "Picture":
+            print (shape)
+            # shape is a pptx.shapes.picture.Picture object
+            print (shape.image)
+            # shape.image is a property defined in that Picture object
+            # return a pptx.parts.image.Image object
+            print (shape.image.ext)
+            extention_ = shape.image.ext
+            print ("exention = ",extention_)
+            print( "tpy of exention = ",type(extention_))
+            print (shape.image.size)
+            print ("image.size type:" , type(shape.image.size[0]))
+            """A (width, height) 2-tuple specifying the dimensions of this image in pixels."""
+            print ("shape.image.dpi :",shape.image.dpi)
+            """A (horz_dpi, vert_dpi) 2-tuple specifying the dots-per-inch resolution of this image. A default value of (72, 72) is used if the dpi is not specified in the image file. """
+            #print (type(shape.image.blob))
+            # shape.image.blob is a property defined in pptx/parts/image.Image
+            # return "The binary image bytestream of this image."
+            
+            # it seams that shape.image.blob returns all the image pixel rather than the real presented image in the ppt ,so here i extract the crop data too
+            print (shape.crop_top)
+            print (shape.crop_bottom)
+            print(shape.crop_left)
+            print (shape.crop_right)
+            crop_top_percent = shape.crop_top
+            crop_bottom_percent = shape.crop_bottom
+            crop_left_percent = shape.crop_left
+            crop_right_percent = shape.crop_right
+            """ shape.crop_right is : A |float| representing the relative portion cropped from the right side of this shape where 1.0 represents 100%. """
+            crop_top_pixel = crop_top_percent * shape.image.size[1]
+            crop_bottom_pixel = crop_bottom_percent * shape.image.size[1]
+            crop_left_pixel = crop_left_percent * shape.image.size[0]
+            crop_right_pixel = crop_right_percent * shape.image.size[0]
+            crop_box = (crop_left_pixel , crop_top_pixel , shape.image.size[0]-crop_right_pixel , shape.image.size[1]-crop_bottom_pixel)
+            print ("crop_box: ",crop_box)
+            # we need image relative position in the slide too for later use
+            left = shape.left
+            """ Read/write. Integer distance of the left edge of this shape from the left edge of the slide, in English Metric Units (EMU) """
+            # .left is a pptx.util.Emu class which has a method converting to points
+            #left = left.pt
+            left = left.cm
+            top = shape.top
+            """ Read/write. Integer distance of the top edge of this shape from the top edge of the slide, in English Metric Units (EMU) """
+            #top = top.pt
+            top = top.cm
+            height = shape. height
+            """ Read/write. Integer distance between top and bottom extents of shape in EMUs """
+            #height = height.pt
+            width = shape.width
+            """ Read/write. Integer distance between left and right extents of shape in EMUs """
+            #width = width.pt
+            print ("left = ",left)
+            print ("top = ", top)
+            print("height = " , height)
+            print ("width = " , width)
+            print ("type of left = ",type(left))
+            print ("type of top = ", type(top))
+            print("type of height = " , type(height))
+            print ("type of width = " , type(width))
+
+
+
+
+            
+            """
+            PIL/Image.py  note:
+            If you have an entire image in a string, wrap it in a
+            :py:class:`~io.BytesIO` object, and use :py:func:`~PIL.Image.open` to load
+            it."""
+            corrent_image = Image.open(io.BytesIO(shape.image.blob))
+            corrent_image = corrent_image . crop(crop_box)
+            """ .crop Returns a rectangular region from this image. The box is a 4-tuple defining the left, upper, right, and lower pixel coordinate. """
+            corrent_image.save("test_image.bmp")
+            corrent_image = Image.open ("test_image.bmp")
+            print (corrent_image.getcolors())
+            corrent_image.show()
+            a = raw_input()
+            break
+
+
+
+
+
+def extract_image(shape):
+    crop_top_percent = shape.crop_top
+    crop_bottom_percent = shape.crop_bottom
+    crop_left_percent = shape.crop_left
+    crop_right_percent = shape.crop_right
+    crop_top_pixel = crop_top_percent * shape.image.size[1]
+    crop_bottom_pixel = crop_bottom_percent * shape.image.size[1]
+    crop_left_pixel = crop_left_percent * shape.image.size[0]
+    crop_right_pixel = crop_right_percent * shape.image.size[0]
+    crop_box = (crop_left_pixel , crop_top_pixel , shape.image.size[0]-crop_right_pixel , shape.image.size[1]-crop_bottom_pixel)
+    #left = shape.left
+    #top = shape.top
+    #height = shape. height
+    #width = shape.width
+    corrent_image = Image.open(io.BytesIO(shape.image.blob))
+    corrent_image = corrent_image . crop(crop_box)
+    return corrent_image
+
+
+
+
+
+##def extract(file_name):
+##    prs = Presentation(file_name)
+##    for slide in prs.slides:
+##        for shape in slide.shapes:
+##            shape_name_and_number = shape.name.split()
+##            if shape_name_and_number[0] == "Picture":
+##                extract_image(shape)
