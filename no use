@@ -1,0 +1,1076 @@
+
+
+import pyodbc
+
+
+
+import pandas as pd
+
+
+
+import numpy as np
+
+
+
+import xlsxwriter
+
+
+
+from PIL import Image
+
+
+
+import io
+
+
+
+from io import BytesIO
+
+
+
+import datetime
+
+
+
+ 
+
+
+
+cnxn = pyodbc.connect('DRIVER={Microsoft
+ODBC for Oracle};UID=f4mfg;SERVER=DSDB;PWD=rptf4mfg')
+
+
+
+for i in range(26):
+
+
+
+        
+print(' ')
+
+
+
+print('---------------------------------------------------------------------------')
+
+
+
+print('author: Liu Xichen, with help
+maggie_sun . if any question or any bug find , ')
+
+
+
+print('please contact 22107')
+
+
+
+print('---------------------------------------------------------------------------')
+
+
+
+print('how to use : ')
+
+
+
+print('      1.
+save small wafer image as name "snap.jpg" to current folder')
+
+
+
+print('      2.
+input lot id and wafer id , after programe done check xlsx file')
+
+
+
+print('---------------------------------------------------------------------------')
+
+
+
+for i in range(11):
+
+
+
+        
+print(' ')
+
+
+
+print('please input lot
+id:        ')
+
+
+
+lotid =
+"'"+str(input())+"'"
+
+
+
+print('please input wafer
+id:        ')
+
+
+
+waferid = str(input())
+
+
+
+print('wait for it...')
+
+
+
+a=str(datetime.datetime.now()).split('.')[0].split('-')
+
+
+
+b=''
+
+
+
+for i in a:
+
+
+
+        
+b=b+i
+
+
+
+b=b.split(':')
+
+
+
+c=''
+
+
+
+for i in b:
+
+
+
+        
+c=c+i
+
+
+
+end_time="'"+c+'000'+"'"
+
+
+
+from_time = "'20180601
+000000000'"
+
+
+
+# end_time = "'20180728
+000000000'"
+
+
+
+#-------  SQL
+
+
+
+mysql1 ="SELECT  'trackin' AS
+Activity ,stepno , stepdescription , trackintime , equipmentname ,trackoutqty
+AS Quantity , recipe FROM SDB_TB_WIP_TITO_HIST WHERE lotid =
+"+lotid+" AND trackintime > "+from_time+" AND
+trackintime < "+end_time+" ORDER BY TRACKINTIME DESC"
+
+
+
+mysql2 ="SELECT
+activity,stepno,stepdesc AS STEPDESCRIPTION ,txntimestamp AS TRACKINTIME
+,equipmentname,recipe   FROM DR01.SDB_TB_WIP_CHANGE_FOUP WHERE
+activity = 'ChangeFOUP' AND lotid ="+lotid+" and txntimestamp
+>"+from_time+" and txntimestamp <"+end_time+" ORDER
+BY txntimestamp DESC"
+
+
+
+mysql3 ="SELECT activity,stepno,
+commentcode AS STEPDESCRIPTION,lasttransactiontime AS TRACKINTIME
+,briefdescription,detaileddescription,mes_activity, childlotid FROM
+SDB_TB_WIP_SPLIT_MERGE WHERE lotid = 'E90782' ORDER BY lasttransactiontime
+DESC"
+
+
+
+meature_sql = "SELECT wafer_id,step_no
+as STEPNO,eqp_id as EQUIPMENTNAME ,date_time as TRACKINTIME FROM
+dr01.sdb_tb_wafer_measure_hist WHERE lot_id = "+lotid+" "
+
+
+
+wafer_data_sql = "SELECT foupid,
+lotid, componentid AS WAFER_ID, txntime AS TRACKINTIME FROM
+SDB_TB_SMIC_FOUPSLOTMAPHIST where lotid = "+lotid+" AND txntime >
+"+from_time+" AND txntime < "+end_time+" ORDER BY
+txntime"
+
+
+
+#-------  data to dataframe
+
+
+
+tito_data = pd.read_sql(mysql1,cnxn)
+
+
+
+tito_data = tito_data[(tito_data['EQUIPMENTNAME']!='DUMMY')
+&(tito_data['RECIPE']!='DUMMY')]
+
+
+
+change_foup_data = pd.read_sql(mysql2,cnxn)
+
+
+
+meature_data =
+pd.read_sql(meature_sql,cnxn)
+
+
+
+wafer_data =
+pd.read_sql(wafer_data_sql,cnxn)
+
+
+
+#--------  add change foup data
+
+
+
+data = pd.concat([tito_data, change_foup_data],ignore_index=True
+).sort_values(by='TRACKINTIME',ascending=False)
+
+
+
+#--------  add meature wafer data
+
+
+
+def MP_waferid(df):
+
+
+
+        
+ls = df['WAFER_ID'].tolist()
+
+
+
+        
+wafer_list =''
+
+
+
+        
+item_list = []
+
+
+
+        
+for item in ls:
+
+
+
+                  
+wafer_list=wafer_list+item.split('#')[1]+','
+
+
+
+        
+for i in np.arange(df.shape[0]):
+
+
+
+                  
+item_list.append(wafer_list)
+
+
+
+        
+df['WAFER_ID']=item_list[0]
+
+
+
+        
+return df
+
+
+
+ 
+
+
+
+summaryed_meature_data =
+meature_data.groupby(['EQUIPMENTNAME','TRACKINTIME']).apply(MP_waferid)
+
+
+
+summaryed_meature_data[['TRACKINTIME']]
++="000"
+
+
+
+summaryed_meature_data =
+summaryed_meature_data.groupby(['TRACKINTIME']).max()   #the max here
+is just a clever way of merging, since all the wafer_id duplicate
+
+
+
+summaryed_meature_data =
+summaryed_meature_data.reset_index()
+
+
+
+data = data.reset_index()
+
+
+
+data = pd.merge(data,summaryed_meature_data
+, how='left', on=['STEPNO', 'EQUIPMENTNAME'])  #trackintime has second difference
+, how to merge by trackintime too?
+
+
+
+#--------  add process wafer id data
+for later check orientation
+
+
+
+wafer_data =
+wafer_data.groupby(['LOTID','FOUPID','TRACKINTIME']).apply(MP_waferid)
+
+
+
+wafer_data =
+wafer_data.groupby(['TRACKINTIME']).max().reset_index()       
+# wafer_data has the risk to be blank , need deal with that or just use long
+time
+
+
+
+#wafer_data.to_excel("wafer_data.xlsx",sheet_name='Sheet1')
+
+
+
+temp_wafer =
+pd.DataFrame(columns=['TRACKINTIME','FOUPID','LOTID','WAFER_ID'])
+
+
+
+for index, row in data.iterrows():
+
+
+
+        
+#print('==========')
+
+
+
+        
+#print(wafer_data[wafer_data['TRACKINTIME'] <
+row['TRACKINTIME_x']].sort_values(by='TRACKINTIME',ascending=False).head(1))
+
+
+
+        
+temp_series = wafer_data[wafer_data['TRACKINTIME'] < row['TRACKINTIME_x']].sort_values(by='TRACKINTIME',ascending=False).head(1).iloc[0]
+
+
+
+        
+temp_wafer = temp_wafer.append(temp_series, ignore_index=True)
+
+
+
+data.insert(0,"ALL_WAFERID",temp_wafer['WAFER_ID'])
+
+
+
+#----------
+
+
+
+# data = data with that wafer
+
+
+
+#----------  read fab tool info
+
+
+
+fab_tool_info = pd.read_excel('tool
+info.xlsx', sheet_name='Sheet1')
+
+
+
+tool_part_1  =
+fab_tool_info[(fab_tool_info['category']=='*')&( fab_tool_info['align'] ==
+'y')]  
+
+
+
+temp =
+pd.merge(data,tool_part_1,on='EQUIPMENTNAME')
+
+
+
+#temp=temp[['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE','ALL_WAFERID','orientation_1','orientation_2','orientation_3']].sort_values(by='TRACKINTIME_x',ascending=False)
+
+
+
+tool_part_2 =
+fab_tool_info[(fab_tool_info['category']=='recipe')&(
+fab_tool_info['align'] == 'y')]
+
+
+
+temp2=pd.merge(data,tool_part_2,on=['EQUIPMENTNAME','RECIPE'])
+
+
+
+tool_part_3 =
+fab_tool_info[(fab_tool_info['category']=='waferid')&(
+fab_tool_info['align'] == 'y')]
+
+
+
+temp3=pd.merge(data,tool_part_3,on=['EQUIPMENTNAME'])
+
+
+
+print('wait for it...')
+
+
+
+ 
+
+
+
+if_meature =
+pd.DataFrame(columns=['if_meature'])
+
+
+
+for index, row in temp3.iterrows():
+
+
+
+        
+if row.fillna('no_mthr')['WAFER_ID']=='no_mthr':
+
+
+
+                  
+if_meature.loc[index]=['n']
+
+
+
+        
+else:
+
+
+
+                  
+wafer_list = row['WAFER_ID'].split(',')[0:-1]
+
+
+
+                  
+if not waferid in wafer_list:
+
+
+
+                           
+if_meature.loc[index]=['n']
+
+
+
+                  
+elif waferid in wafer_list:
+
+
+
+                           
+if_meature.loc[index]=['y']
+
+
+
+temp3.insert(0,"if_meature",if_meature['if_meature'])
+
+
+
+temp3=temp3[temp3['if_meature_wafer']==temp3['if_meature']]
+
+
+
+ 
+
+
+
+#
+temp3.to_excel("temp3.xlsx",sheet_name='Sheet1')
+
+
+
+#
+temp2.to_excel("temp2.xlsx",sheet_name='Sheet1')
+
+
+
+#
+temp.to_excel("temp.xlsx",sheet_name='Sheet1')
+
+
+
+tool_part_4 = fab_tool_info[
+fab_tool_info['align'] == 'n']
+
+
+
+temp4=pd.merge(data,tool_part_4,on=['EQUIPMENTNAME'])
+
+
+
+ 
+
+
+
+temp 
+=temp[['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE_x','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']]
+
+
+
+temp2=temp2[['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE', 
+'ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']]
+
+
+
+temp3=temp3[['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE_x','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']]
+
+
+
+temp4=temp4[['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE_x','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']]
+
+
+
+ 
+
+
+
+temp.columns
+=['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']
+
+
+
+temp2.columns=['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']
+
+
+
+temp3.columns=['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']
+
+
+
+temp4.columns=['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE','ALL_WAFERID','align','if_meature_wafer','orientation_1','orientation_2','orientation_3']
+
+
+
+ 
+
+
+
+orientation_df =
+pd.concat([temp,temp2,temp3,temp4],ignore_index=True).sort_values(by='TRACKINTIME_x',ascending=False)
+
+
+
+data = pd.merge (data , orientation_df
+,on=['STEPNO','EQUIPMENTNAME','TRACKINTIME_x'], how='left')
+
+
+
+data =
+data.sort_values(by='TRACKINTIME_x',ascending=True).reset_index()
+
+
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+
+
+self_align_tool_first =
+data[data['align']=='y'].head(1).index.get_values().tolist()
+
+
+
+meature_align_tool_first =
+data[(data['align']=='y')&(data['if_meature_wafer']=='y')].head(1).index.get_values().tolist()
+
+
+
+ 
+
+
+
+if meature_align_tool_first == []:
+
+
+
+        
+if self_align_tool_first !=[]:
+
+
+
+                  
+first_align_tool_index = self_align_tool_first[0]
+
+
+
+        
+else : 
+
+
+
+                  
+print('no align tool')
+
+
+
+elif self_align_tool_first ==[]:
+
+
+
+        
+if meature_align_tool_first !=[]:
+
+
+
+                  
+first_align_tool_index = meature_align_tool_first[0]
+
+
+
+else:
+
+
+
+        
+print('self_align_tool_first=',self_align_tool_first)
+
+
+
+        
+print('meature_align_tool_first=',meature_align_tool_first)
+
+
+
+        
+first_align_tool_index =
+min(self_align_tool_first[0],meature_align_tool_first[0])
+
+
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+
+
+data_copy = data.copy()
+
+
+
+for index, row in data_copy.iterrows(): 
+
+
+
+        
+if index<first_align_tool_index:
+
+
+
+                  
+continue
+
+
+
+        
+if row['align']=='y' and row['if_meature_wafer']!='n':
+
+
+
+                  
+last_notch_1 , last_notch_2, last_notch_3 = row['orientation_1'] ,
+row['orientation_2'] , row['orientation_3']
+
+
+
+        
+elif row['align']=='n' or (row['align']=='y' and row['if_meature_wafer']=='n'):
+
+
+
+        
+data.loc[index:(index+1),['orientation_1']],data.loc[index:(index+1),['orientation_2']],data.loc[index:(index+1),['orientation_3']]=last_notch_1+row['orientation_1']
+,last_notch_2+row['orientation_1'],last_notch_3+row['orientation_1']
+
+
+
+                  
+last_notch_1,last_notch_2,last_notch_3 =
+data.loc[index:(index+1),['orientation_1']],data.loc[index:(index+1),['orientation_2']],data.loc[index:(index+1),['orientation_3']]
+
+
+
+        
+else :
+
+
+
+                  
+pass
+
+
+
+data =
+data.sort_values(by='TRACKINTIME_x',ascending=False)
+
+
+
+print('wait for it...')
+
+
+
+#-----------  prepare data for excel
+
+
+
+data =
+data[['ACTIVITY_x','STEPNO','STEPDESCRIPTION_x','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID_x','QUANTITY_x','RECIPE_x','orientation_1','orientation_2','orientation_3','align','if_meature_wafer','ALL_WAFERID_x']]
+
+
+
+data = data.reset_index()
+
+
+
+data =
+data[['ACTIVITY_x','STEPNO','STEPDESCRIPTION_x','TRACKINTIME_x','EQUIPMENTNAME','WAFER_ID_x','QUANTITY_x','RECIPE_x','orientation_1','orientation_2','orientation_3','align','if_meature_wafer','ALL_WAFERID_x']]
+
+
+
+data.columns =
+['ACTIVITY','STEPNO','STEPDESCRIPTION','TRACKINTIME','EQUIPMENTNAME','WAFER_ID','QUANTITY','RECIPE','orientation_1','orientation_2','orientation_3','align','if_meature_wafer','ALL_WAFERID']
+
+
+
+excel_name = lotid.split("'")[1]+
+"#"+waferid +" notch orientation.xlsx"
+
+
+
+ 
+
+
+
+#-----------  insert image
+
+
+
+#data.to_excel(excel_name,sheet_name='Sheet1')
+
+
+
+writer = pd.ExcelWriter(excel_name,
+engine='xlsxwriter')
+
+
+
+data.to_excel(writer, sheet_name='Sheet1')
+
+
+
+workbook  = writer.book
+
+
+
+worksheet = writer.sheets['Sheet1']
+
+
+
+ 
+
+
+
+corrent_image = Image.open('snap.jpg')
+
+
+
+worksheet.set_column(9,11,15)
+
+
+
+worksheet.set_column(3,3,20)
+
+
+
+ 
+
+
+
+def
+rotate_n_insert_image(degree,corrent_image,x,y):
+
+
+
+        
+rotated_image=corrent_image.copy().rotate(degree,expand=1)
+
+
+
+        
+temp_image='ignore this '+str(degree)+lotid+waferid+'.jpg'
+
+
+
+        
+rotated_image.save(temp_image)
+
+
+
+        
+what_io = io.BytesIO()
+
+
+
+        
+rotated_image = rotated_image.save(what_io,'png')
+
+
+
+        
+worksheet.set_row(x,70)
+
+
+
+        
+worksheet.insert_image(x, y,temp_image,{'image_data':rotated_image})
+
+
+
+ 
+
+
+
+ori1=9
+
+
+
+ori2=10
+
+
+
+ori3=11
+
+
+
+for index, row in data.iterrows(): 
+
+
+
+        
+print('wait for it...')
+
+
+
+        
+if
+(row.isnull()['orientation_1'])and(row.isnull()['orientation_2'])and(row.isnull()['orientation_3']):
+
+
+
+                  
+continue
+
+
+
+        
+rotate_n_insert_image(int(row['orientation_1']),corrent_image,int(index)+1,ori1) 
+#int(index.get_values()[0])+1
+
+
+
+        
+if (row.isnull()['orientation_2'])and(row.isnull()['orientation_3']):
+
+
+
+                  
+continue
+
+
+
+        
+rotate_n_insert_image(int(row['orientation_2']),corrent_image,int(index)+1,ori2)
+
+
+
+        
+if row.isnull()['orientation_3']:
+
+
+
+                  
+continue
+
+
+
+        
+rotate_n_insert_image(int(row['orientation_3']),corrent_image,int(index)+1,ori3)
+
+
+
+                  
+
+
+
+
+ 
+
+
+
+                  
+
+
+
+
+ 
+
+
+
+workbook.close()
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print(' ')
+
+
+
+print ("done")
+
+
+
+print(' ')
+
+
+
+print('please open ',excel_name)
+
+
+
+print('press enter to exit')
+
+
+
+c=input()
+
+
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+
+
+## wafer pcs info    
+SDB_TB_SMIC_FOUPSLOTMAPHIST
+
+
+
+## wafer split and merge
+info     SDB_TB_WIP_SPLIT_MERGE
+
+
+
+## unit df1 with df2   
+pd.concat([df1, df2]) 
+
+
+
+## massure wafer ID   
+dr01.sdb_tb_wafer_measure_hist
+
+
+
